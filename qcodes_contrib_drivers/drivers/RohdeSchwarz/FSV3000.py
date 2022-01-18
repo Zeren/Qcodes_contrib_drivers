@@ -32,23 +32,26 @@ class RohdeSchwarz_FSV3000(VisaInstrument):
                            set_cmd=False,
                            get_cmd=self.get_options,
                            docstring="(ReadOnly) List of installed options.")
-
         self.add_parameter("start",
                            label='Start',
                            set_cmd='FREQ:STAR {}',
-                           get_cmd='FREQ:STAR?')
+                           get_cmd='FREQ:STAR?',
+                           vals=vals.Numbers(self._min_freq, self._max_freq))
         self.add_parameter('stop',
                            label='Stop',
                            set_cmd='FREQ:STOP {}',
-                           get_cmd='FREQ:STOP?')
+                           get_cmd='FREQ:STOP?',
+                           vals=vals.Numbers(self._min_freq, self._max_freq))
         self.add_parameter('center',
                            label='Center',
                            set_cmd='FREQ:CENT {}',
-                           get_cmd='FREQ:CENT?')
+                           get_cmd='FREQ:CENT?',
+                           vals=vals.Numbers(self._min_freq, self._max_freq))
         self.add_parameter('span',
                            label='Span',
                            set_cmd='FREQ:SPAN {}',
-                           get_cmd='FREQ:SPAN?')
+                           get_cmd='FREQ:SPAN?',
+                           vals=vals.Numbers(self._min_freq, self._max_freq))
         if 'B25' in self.options:
             attenuation_aval = vals.Enum(*np.arange(0, 75.1, 1).tolist())
         else:
@@ -85,9 +88,9 @@ def test():
     fsv = FSV3000.RohdeSchwarz_FSV3000(name='FSV3044', address='TCPIP::192.168.88.15::hislip0::INSTR')
     print(fsv.options)
     # fsv.att(5)
-    fsv.preamp('OFF')
-    print(fsv.preamp(), fsv.preamp_gain())
-
+    # fsv.preamp('OFF')
+    # print(fsv.preamp(), fsv.preamp_gain())
+    fsv.stop(3e9)
 
 if __name__ == '__main__':
     test()
