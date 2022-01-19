@@ -26,7 +26,6 @@ class RohdeSchwarz_FSV3000(VisaInstrument):
         self._min_freq, self._max_freq = m_frequency[self.model]
         self.options = self.ask("*OPT?").strip().split(",")
 
-        self.add_function("reset", call_cmd="*RST")
         self.add_parameter('options',
                            label='Options',
                            set_cmd=False,
@@ -82,15 +81,21 @@ class RohdeSchwarz_FSV3000(VisaInstrument):
     def get_options(self):
         return self.options
 
+    def reset(self):
+        self.write('*RST')
+
 
 def test():
-    import qcodes_contrib_drivers.drivers.RohdeSchwarz.FSV3000 as FSV3000
-    fsv = FSV3000.RohdeSchwarz_FSV3000(name='FSV3044', address='TCPIP::192.168.88.15::hislip0::INSTR')
+    # import qcodes_contrib_drivers.drivers.RohdeSchwarz.FSV3000 as FSV3000
+    fsv = RohdeSchwarz_FSV3000(name='FSV3044', address='TCPIP::192.168.88.15::hislip0::INSTR')
     print(fsv.options)
+    fsv.reset()
+    print(fsv.stop())
     # fsv.att(5)
     # fsv.preamp('OFF')
     # print(fsv.preamp(), fsv.preamp_gain())
-    fsv.stop(3e9)
+    # fsv.stop(3e9)
+
 
 if __name__ == '__main__':
     test()
