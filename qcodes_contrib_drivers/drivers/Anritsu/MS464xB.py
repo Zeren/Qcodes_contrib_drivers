@@ -1,5 +1,6 @@
 import logging
 from typing import Any, Optional
+import numpy as np
 
 from qcodes import VisaInstrument, MultiParameter, validators as vals, InstrumentChannel, ChannelList
 
@@ -34,6 +35,14 @@ class MS464xBChannel(InstrumentChannel):
         super().__init__(parent, name)
         self._instrument_channel = channel
 
+        self.add_parameter(name='trace_count',
+                           label='Number of traces in channel',
+                           set_cmd=f'CALC{channel}:PAR:COUN',
+                           get_cmd=f'CALC{channel}:PAR:COUN?',
+                           get_parser=int,
+                           vals=vals.Numbers())
+
+        # self.write(f"CALC{i_channel}:PAR:FORM REIM")
 
 
 class MS464xB(VisaInstrument):
@@ -64,9 +73,6 @@ class MS464xB(VisaInstrument):
         )
         self.add_submodule('channels', channels)
 
-        if init:
-            self.add_channel('channel1')
-
         self.add_parameter(name='trig_source',
                            label='Triggering source',
                            set_cmd='TRIG:SOUR {}',
@@ -75,23 +81,36 @@ class MS464xB(VisaInstrument):
         self.add_parameter(name='port_count',
                            label='Number of instrument test ports',
                            set_cmd=False,
-                           get_cmd='SYST:PORT:COUN?')
+                           get_cmd='SYST:PORT:COUN?',
+                           get_parser=int)
+        self.add_parameter(name='channel_count',
+                           label='Number of active channel',
+                           set_cmd='DISP:COUNT',
+                           get_cmd='DISP:COUNT?',
+                           get_parser=int,
+                           vals=vals.Enum(*np.arange(1, 16.1, 1).tolist()))
+        if init:
+            self.add_channel('channel1')
+        else:
+            for num in range(1, self.channel_count() + 1):
+                self.add_channel(f'channel{num}')
 
     def reset(self):
         self.write('*RST')
 
     def add_channel(self, channel_name: str, **kwargs: Any) -> None:
         i_channel = len(self.channels) + 1
-        channel = self.MS464xBChannel(self, channel_name, i_channel, **kwargs)
+        channel = MS464xBChannel(self, channel_name, i_channel, **kwargs)
         self.channels.append(channel)
-        if i_channel == 1:
-            self.display_single_window()
-        if i_channel == 2:
-            self.display_dual_window()
+        # if i_channel == 1:
+        #     self.display_single_window()
+        # if i_channel == 2:
+        #     self.display_dual_window()
         # shortcut
         setattr(self, channel_name, channel)
         # initialising channel
+        self.write(f'DISP:COUNT {i_channel}')
         self.write(f"SENS{i_channel}:SWE:TYPE LIN")
         self.write(f"SENS{i_channel}:SWE:TIME:AUTO ON")
-        self.write(f"CALC{i_channel}:PAR:FORM REIM")
+        # self.write(f"CALC{i_channel}:PAR:FORM REIM")
 
