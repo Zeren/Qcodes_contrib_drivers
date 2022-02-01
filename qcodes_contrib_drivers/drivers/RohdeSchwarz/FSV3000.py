@@ -2,10 +2,66 @@ import logging
 from typing import Any
 import numpy as np
 
-from qcodes import VisaInstrument
+from qcodes import VisaInstrument, InstrumentChannel, ChannelList
 from qcodes import validators as vals
 
 log = logging.getLogger(__name__)
+
+
+class SpectrumAnalyzer(InstrumentChannel):
+    def __init__(self, parent: 'RohdeSchwarz_FSV3000', name: str, hwchan: int):
+        super().__init__(parent, name)
+        self.add_parameter("start",
+                           label='Start',
+                           set_cmd='FREQ:STAR {}',
+                           get_cmd='FREQ:STAR?',
+                           vals=vals.Numbers(self.parent._min_freq, self.parent._max_freq))
+        self.add_parameter('stop',
+                           label='Stop',
+                           set_cmd='FREQ:STOP {}',
+                           get_cmd='FREQ:STOP?',
+                           vals=vals.Numbers(self.parent._min_freq, self.parent._max_freq))
+        self.add_parameter('center',
+                           label='Center',
+                           set_cmd='FREQ:CENT {}',
+                           get_cmd='FREQ:CENT?',
+                           vals=vals.Numbers(self.parent._min_freq, self.parent._max_freq))
+        self.add_parameter('span',
+                           label='Span',
+                           set_cmd='FREQ:SPAN {}',
+                           get_cmd='FREQ:SPAN?',
+                           vals=vals.Numbers(self.parent._min_freq, self.parent._max_freq))
+        if 'B25' in self.parent.options:
+            attenuation_aval = vals.Enum(*np.arange(0, 75.1, 1).tolist())
+        else:
+            attenuation_aval = vals.Enum(*np.arange(0, 75.1, 5).tolist())
+        self.add_parameter('att',
+                           label='Attenuator',
+                           set_cmd='INP:ATT {}dB',
+                           get_cmd='INP:ATT?',
+                           vals=attenuation_aval)
+
+        if 'B24' in self.parent.options:
+            self.add_parameter('preamp',
+                               label='Preamplifier',
+                               set_cmd='INP:GAIN:STAT {}',
+                               get_cmd='INP:GAIN:STAT?',
+                               val_mapping={'ON': 1, 'OFF': 0},
+                               vals=vals.Enum('ON', 'OFF'))
+            if self.parent.model == 'FSV3044':
+                values = vals.Enum(30)
+            else:
+                values = vals.Enum(15, 30)
+            self.add_parameter('preamp_gain',
+                               label='Preamplifier gain',
+                               set_cmd='INP:GAIN:VAL {}',
+                               get_cmd='INP:GAIN:VAL?',
+                               vals=values)
+
+
+class IQAnalyzer(InstrumentChannel):
+    def __init__(self, parent: 'RohdeSchwarz_FSV3000', name: str, hwchan: int):
+        super().__init__(parent, name)
 
 
 class RohdeSchwarz_FSV3000(VisaInstrument):
@@ -31,52 +87,15 @@ class RohdeSchwarz_FSV3000(VisaInstrument):
                            set_cmd=False,
                            get_cmd=self.get_options,
                            docstring="(ReadOnly) List of installed options.")
-        self.add_parameter("start",
-                           label='Start',
-                           set_cmd='FREQ:STAR {}',
-                           get_cmd='FREQ:STAR?',
-                           vals=vals.Numbers(self._min_freq, self._max_freq))
-        self.add_parameter('stop',
-                           label='Stop',
-                           set_cmd='FREQ:STOP {}',
-                           get_cmd='FREQ:STOP?',
-                           vals=vals.Numbers(self._min_freq, self._max_freq))
-        self.add_parameter('center',
-                           label='Center',
-                           set_cmd='FREQ:CENT {}',
-                           get_cmd='FREQ:CENT?',
-                           vals=vals.Numbers(self._min_freq, self._max_freq))
-        self.add_parameter('span',
-                           label='Span',
-                           set_cmd='FREQ:SPAN {}',
-                           get_cmd='FREQ:SPAN?',
-                           vals=vals.Numbers(self._min_freq, self._max_freq))
-        if 'B25' in self.options:
-            attenuation_aval = vals.Enum(*np.arange(0, 75.1, 1).tolist())
-        else:
-            attenuation_aval = vals.Enum(*np.arange(0, 75.1, 5).tolist())
-        self.add_parameter('att',
-                           label='Attenuator',
-                           set_cmd='INP:ATT {}dB',
-                           get_cmd='INP:ATT?',
-                           vals=attenuation_aval)
 
-        if 'B24' in self.options:
-            self.add_parameter('preamp',
-                               label='Preamplifier',
-                               set_cmd='INP:GAIN:STAT {}',
-                               get_cmd='INP:GAIN:STAT?',
-                               val_mapping={'ON': 1, 'OFF': 0},
-                               vals=vals.Enum('ON', 'OFF'))
-            if self.model == 'FSV3044':
-                values = vals.Enum(30)
-            else:
-                values = vals.Enum(15, 30)
-            self.add_parameter('preamp_gain',
-                               label='Preamplifier gain',
-                               set_cmd='INP:GAIN:VAL {}',
-                               get_cmd='INP:GAIN:VAL?',
-                               vals=values)
+        active_channels = self.ask("INSTrument:LIST?").strip().replace("'", '').split(",")
+        print(active_channels)
+
+        spectrum_channels = ChannelList(self, "SA", SpectrumAnalyzer, snapshotable=True)
+        iq_channels = ChannelList(self, "IQ", IQAnalyzer, snapshotable=True)
+        sachannel = SpectrumAnalyzer(self, name, 0)
+        spectrum_channels.append(sachannel)
+        self.add_submodule('spectrum_channels', spectrum_channels)
 
     def get_options(self):
         return self.options
@@ -88,9 +107,9 @@ class RohdeSchwarz_FSV3000(VisaInstrument):
 def test():
     # import qcodes_contrib_drivers.drivers.RohdeSchwarz.FSV3000 as FSV3000
     fsv = RohdeSchwarz_FSV3000(name='FSV3044', address='TCPIP::192.168.88.15::hislip0::INSTR')
-    print(fsv.options)
-    fsv.reset()
-    print(fsv.stop())
+    # sa = fsv.submodules['spectrum_channels'][0]
+    # print(sa.stop())
+    # print(fsv.ask("INSTrument:LIST?"))
     # fsv.att(5)
     # fsv.preamp('OFF')
     # print(fsv.preamp(), fsv.preamp_gain())
