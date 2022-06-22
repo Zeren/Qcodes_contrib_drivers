@@ -7,7 +7,7 @@ from qcodes.utils import validators
 from typing import Any, NewType, Sequence, List, Dict, Tuple, Optional
 from packaging.version import parse
 
-# Version 0.11.2
+# Version 0.14.0
 #
 # Guiding principles for this driver for QDevil QDAC-II
 # -----------------------------------------------------
@@ -31,7 +31,7 @@ from packaging.version import parse
 #
 # 4. Any generator should by default be set to start on the bus trigger
 #    (*TRG) so that it is possible to synchronise several generators without
-#    further set up; which also eliminates the need for special cases for the
+#    further setup; which also eliminates the need for special cases for the
 #    bus trigger.
 
 
@@ -144,11 +144,11 @@ class QDac2ExternalTrigger(InstrumentChannel):
 
 def floats_to_comma_separated_list(array: Sequence[float]):
     rounded = [format(x, 'g') for x in array]
-    return ', '.join(rounded)
+    return ','.join(rounded)
 
 
 def array_to_comma_separated_list(array: str):
-    return ', '.join(map(str, array))
+    return ','.join(map(str, array))
 
 
 def comma_sequence_to_list(sequence: str):
@@ -367,6 +367,27 @@ class Sweep_Context(_Dc_Context):
         """
         return float(self._ask_channel('sour{0}:swe:time?'))
 
+    def start_V(self) -> float:
+        """
+        Returns:
+            float: Starting voltage
+        """
+        return float(self._ask_channel('sour{0}:swe:star?'))
+
+    def stop_V(self) -> float:
+        """
+        Returns:
+            float: Ending voltage
+        """
+        return float(self._ask_channel('sour{0}:swe:stop?'))
+
+    def values_V(self) -> Sequence[float]:
+        """
+        Returns:
+            Sequence[float]: List of voltages
+        """
+        return list(np.linspace(self.start_V(), self.stop_V(), self.points()))
+
 
 class List_Context(_Dc_Context):
 
@@ -429,6 +450,16 @@ class List_Context(_Dc_Context):
             int: Number of cycles remaining in the DC list
         """
         return int(self._ask_channel('sour{0}:list:ncl?'))
+
+    def values_V(self) -> Sequence[float]:
+        """
+        Returns:
+            Sequence[float]: List of voltages
+        """
+        # return comma_sequence_to_list_of_floats(
+        #     self._ask_channel('sour{0}:list:volt?'))
+        return comma_sequence_to_list_of_floats(
+            self._ask_channel('sour{0}:list:volt?'))
 
 
 class _Waveform_Context(_Channel_Context):
@@ -1011,7 +1042,8 @@ class Measurement_Context(_Channel_Context):
         # Bug circumvention
         if self.n_available() == 0:
             return []
-        return comma_sequence_to_list(self._ask_channel('sens{0}:data:rem?'))
+        return comma_sequence_to_list_of_floats(
+            self._ask_channel('sens{0}:data:rem?'))
 
     def peek_A(self) -> float:
         """Peek at the first available current measurement
@@ -1022,7 +1054,7 @@ class Measurement_Context(_Channel_Context):
         return float(self._ask_channel('sens{0}:data:last?'))
 
     def _set_aperture(self, aperture_s: Optional[float], nplc: Optional[int]
-                     ) -> None:
+                      ) -> None:
         if aperture_s:
             return self._write_channel(f'sens{"{0}"}:aper {aperture_s}')
         self._write_channel(f'sens{"{0}"}:nplc {nplc}')
@@ -1070,22 +1102,6 @@ class QDac2Channel(InstrumentChannel):
         self.add_function(
             name='measurement_abort',
             call_cmd=f'sens{channum}:abor'
-        )
-        self.add_parameter(
-            name='low_current_limit_A',
-            label='low limit',
-            unit='A',
-            set_cmd='sour{1}:ilim:low {0}'.format('{}', channum),
-            get_cmd=f'sour{channum}:ilim:low?',
-            get_parser=float
-        )
-        self.add_parameter(
-            name='high_current_limit_A',
-            label='high limit',
-            unit='A',
-            set_cmd='sour{1}:ilim:high {0}'.format('{}', channum),
-            get_cmd=f'sour{channum}:ilim:high?',
-            get_parser=float
         )
         self.add_parameter(
             name='measurement_count',
@@ -1278,22 +1294,15 @@ class QDac2Channel(InstrumentChannel):
         return Measurement_Context(self, delay_s, repetitions, current_range,
                                    aperture_s, nplc)
 
-    def output_mode(self, range: str = 'high', filter: str = 'high',
-                    low_current_limit_A: float = 2e-7,
-                    high_current_limit_A: float = 0.01
-                    ) -> None:
-        """Set the output voltage and current limits
+    def output_mode(self, range: str = 'high', filter: str = 'high') -> None:
+        """Set the output voltage
 
         Args:
             range (str, optional): Low or high (default) current range
             filter (str, optional): DC (10Hz), medium (10kHz) or high (300kHz, default) voltage filter
-            low_current_limit_A (float, optional): Current limit in low range
-            high_current_limit_A (float, optional): Current limit in high range
         """
         self.output_range(range)
         self.output_filter(filter)
-        self.low_current_limit_A(low_current_limit_A)
-        self.high_current_limit_A(high_current_limit_A)
 
     def dc_list(self, voltages: Sequence[float], repetitions: int = 1,
                 dwell_s: float = 1e-03, backwards: bool = False,
@@ -1499,7 +1508,7 @@ class Trace_Context:
         self._parent = parent
         self._size = size
         self._name = name
-        self._parent.write(f'trac:def "{name}", {size}')
+        self._parent.write(f'trac:def "{name}",{size}')
 
     def __len__(self):
         return self.size
@@ -1531,7 +1540,7 @@ class Trace_Context:
         if len(values) != self.size:
             raise ValueError(f'trace length {len(values)} does not match '
                              f'allocated length {self.size}')
-        self._parent.write_floats(f'trac:data "{self.name}", ', values)
+        self._parent.write_floats(f'trac:data "{self.name}",', values)
 
 
 class Sweep_2D_Context:
@@ -1554,14 +1563,14 @@ class Sweep_2D_Context:
         # Let Arrangement take care of freeing triggers
         return False
 
-    def actual_values_V(self, gate: str) -> Sequence[float]:
+    def actual_values_V(self, gate: str) -> np.ndarray:
         """The corrected values that would actually be sent to the gate
 
         Args:
             gate (str): Name of gate
 
         Returns:
-            Sequence[float]: Corrected voltages
+            np.ndarray: Corrected voltages
         """
         index = self._arrangement._gate_index(gate)
         return self._sweep[:, index]
@@ -1813,6 +1822,7 @@ class QDac2(VisaInstrument):
             address (str): Visa identification string
             **kwargs: additional argument to the Visa driver
         """
+        self._check_instrument_name(name)
         super().__init__(name, address, terminator='\n', **kwargs)
         self._set_up_serial()
         self._set_up_debug_settings()
@@ -1848,7 +1858,7 @@ class QDac2(VisaInstrument):
         Returns:
             int: Number of internal triggers
         """
-        return 16
+        return 14
 
     @staticmethod
     def n_external_inputs() -> int:
@@ -1939,7 +1949,7 @@ class QDac2(VisaInstrument):
         return int(self.ask('syst:err:coun?'))
 
     def start_all(self) -> None:
-        """Trigger the global SCPI bus (*TRG)
+        """Trigger the global SCPI bus (``*TRG``)
 
         All generators, that have not been explicitly set to trigger on an
         internal or external trigger, will be started.
@@ -2117,7 +2127,7 @@ class QDac2(VisaInstrument):
 
     def _set_up_serial(self) -> None:
         # No harm in setting the speed even if the connection is not serial.
-        self.visa_handle.baud_rate = 921600 # type: ignore
+        self.visa_handle.baud_rate = 921600  # type: ignore
 
     def _check_for_wrong_model(self) -> None:
         model = self.IDN()['model']
@@ -2148,14 +2158,14 @@ class QDac2(VisaInstrument):
                                snapshotable=False)
         for i in range(1, 5 + 1):
             name = f'ext{i}'
-            trigger = QDac2ExternalTrigger(self, str(QDac2ExternalTrigger), i)
+            trigger = QDac2ExternalTrigger(self, name, i)
             self.add_submodule(name, trigger)
             triggers.append(trigger)
         triggers.lock()
         self.add_submodule('external_triggers', triggers)
 
     def _set_up_internal_triggers(self) -> None:
-        # A set of the available 16 internal triggers
+        # A set of the available internal triggers
         self._internal_triggers = set(range(1, self.n_triggers() + 1))
 
     def _set_up_manual_triggers(self) -> None:
@@ -2169,3 +2179,10 @@ class QDac2(VisaInstrument):
     def _set_up_simple_functions(self) -> None:
         self.add_function('reset', call_cmd='*rst')
         self.add_function('abort', call_cmd='abor')
+
+    def _check_instrument_name(self, name: str) -> None:
+        if name.isidentifier():
+            return
+        raise ValueError(
+            f'Instrument name "{name}" is incompatible with QCoDeS parameter '
+            'generation (no spaces, punctuation, prepended numbers, etc)')
